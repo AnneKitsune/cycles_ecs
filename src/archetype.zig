@@ -13,7 +13,7 @@ pub fn Archetype(comptime tuple: anytype) type {
         pub fn init(allocator: std.mem.Allocator) !S {
             const ty = std.MultiArrayList(types);
             var multi: ty = ty{};
-            try multi.ensureTotalCapacity(allocator, 1);
+            try multi.ensureTotalCapacity(allocator, 8);
             return S {
                 .data = multi,
                 .alloc = allocator,
@@ -93,14 +93,13 @@ pub fn Archetypes(comptime type_slice: []const []const type) type {
                     const left = data_fields[i].field_type;
                     const right = archetype_field.field_type;
                     if (left != right) {
-                        @compileLog(@typeName(left), @typeName(right));
                         mismatch = true;
                         break;
                     }
                 }
                 if (!mismatch) {
                     // Runtime start.
-                    var archetype = @field(self.archetypes, std.meta.fields(archetypes_types)[arch_id].name);
+                    var archetype = &@field(self.archetypes, std.meta.fields(archetypes_types)[arch_id].name);
                     var converted: generated_tuples[arch_id] = undefined;
                     comptime {
                         inline for (tuple_fields) |f, i| {
@@ -130,10 +129,12 @@ pub fn Archetypes(comptime type_slice: []const []const type) type {
 }
 
 test "multiarray" {
-    //const A = struct {a: u32};
-    const ty = std.MultiArrayList(std.meta.Tuple(&.{u32}));
+    const A = struct {a: u32};
+    const ty = std.MultiArrayList(A);
     var multi: ty = ty{};
     defer multi.deinit(std.testing.allocator);
+    try multi.append(std.testing.allocator, A {.a = 55});
+    try std.testing.expect(multi.slice().len == 1);
 }
 
 test "archetypes" {
@@ -144,5 +145,7 @@ test "archetypes" {
     defer archetypes.deinit();
     const v: u32 = 55;
     _ = try archetypes.insert(.{v});
+    try std.testing.expect(archetypes.archetypes.@"0".data.slice().len == 0);
+    try std.testing.expect(archetypes.archetypes.@"1".data.slice().len == 1);
     //archetypes.remove(ent1);
 }
