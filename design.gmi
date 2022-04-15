@@ -1,0 +1,171 @@
+# Arche ECS
+
+Archetypal ECS.
+
+## Concepts
+
+### Storage
+Optimised for memory and access speed.
+Data of the same type can be stored in multiple arrays but those arrays are contiguous (filled).
+
+Data is grouped by archetype: Data that represent a particular entity type.
+
+Example of archetype:
+```
+const Player = struct repr(.Packed) {
+    transform: *Transform3f,
+    controllable: Controllable, // bool
+    mesh_handle: MeshHandle,
+    texture_handle: TextureHandle,
+};
+```
+Each of those field is called a "component".
+
+Example use cases would be:
+* For all transform and controllable, apply a transformation based on window inputs.
+* For all transform, mesh, texture and no animation, render static meshes using vulkan.
+
+Operations users can do:
+* Create archetype
+* Insert or delete an archetype instance (entity)
+* Iterate mutably or immutably over a set of component pointers ("iterating/iterate")
+
+Another type of storage is called a "resource".
+Resources are components that only have a single instance.
+
+### Dispatcher
+The dispatcher is responsible to build and hold an execution graph of various functions.
+Those functions are limited to only request resources or
+
+
+
+TODO
+entity id (to remove entities, to do hierarchies)
+- archetype type + index (valid for a single frame)
+batch operations (batch create, batch delet)
+- don't, those ops are used too rarely
+hierarchies
+- the purpose is to manipulate the transform relative to a parent's transform and do so in the right order. if you move the parent, the child should move too. if the child moves, it should do so in the parent's coordinates system.
+- used in cases where you want to kill the parent and all childrens are killed too
+- not sure how to implement this here without having unique ids for each entity
+resources
+events
+- literally just an ArrayList as a resource but wrapped in a struct.
+dependencies
+inner parallelism
+system exec graph, runtime vs comptime
+system interface
+
+Taming a dino.
+previous: add component Tamed {owner} on dino, then query all dinos and check if tamed component exists to render text on top.
+now: dinos all have a Tamed{?owner} component. you query all (dino, tamed) and if owner.? then render text on top. slower than using bitset ops because now you use a if. but also you don't waste storage for all the dinos with no owners and don't do a bitset AND with the size of all entities. you instead use IF on the number of dinos.
+
+## Use cases
+
+### Storing data
+### Organise call between dependent systems
+Organise the communication between different features in a way that keeps the same behavior but doesn't nuke performance.
+### Automatically schedule code to run in parallel
+### Performing fast (mutable) joins over data with optional filtering
+### Uniquely identifying dynamic entities (network ids, prefabs, etc)
+### Keeping data associated on a per entity basis (draw handles) or global (windows).
+Perform actions when entities are missing associated data (create a draw handle) or when they are modified or destroyed (update handle, upload mesh data or destroy handle).
+### Organise and manipulate a hierarchy of transformations
+For animations, where moving parent entities or physics joints should move all the childs accordingly.
+### Batch destroy entities
+When unloading a scene, it should remove all elements from that scene like models and props.
+Some might or might not be removed, like players.
+### Record and replay a scene
+### Derive data from existing data
+Can be recalculated every frame and discarded at the end of frames or CRUD'd by updating cached data.
+### Maintain pointers to things that can stop existing
+Point to other entities or prefabs. Point to assets that can be unloaded but should get reloaded.
+Point to gpu handles or windows.
+Point to item definitions or stats.
+### Build conditional chains of event (when things happen, you want other things to happen at some point)
+keyboard -> if speed > 0 move player -> update gpu position of player + send server command to move player
+entity got into firing range of turret -> turret activates and aims
+
+action -> action* + state'*
+### When data is in a certain state, things should happen
+turret is aiming at an entity in range and has ammo -> turret fires -> if it hits, the player loses hp + turret has one less bullet + ground empty bullet is created + animation of being shot starts + blood stains are added to the ground around the player
+
+state -> action* + state'*
+### Group and organise data in a standard and efficient way
+You can group data using structs and pointers but that tends to not scale when you have shared data.
+Game data tends to be highly dynamic where some entities will have some fields use and others not while other entities can be very similar but have only one field of difference in usage.
+### Express a partial ordering of systems
+### Express in which states the systems should run
+### Ability to save and load states
+Even when data types have changed.
+
+
+thoughts:
+lots of derived data
+type of both primary and derived data can change
+primary data has to be serializable and deserializable
+derived data should be able to be re-derived from any valid primary data, regardless of the cache states and external data states (gpu).
+derived data can be done offline or online depending on if we plan the primary data to change
+
+the most important things we do are:
+- store primary data and modify it
+- derive secondary data from primary data
+- store (cache) secondary data
+- use both primary and secondary data to generate new secondary data or modify primary data
+
+start at the end (use cases, the consumers of data that interact with the world)
+those request the primary and secondary data they need
+then y
+
+primary + secondary -> fn -> primary' + secondary' + actions (gpu, syscall, etc)
+primary are stored.
+secondary are either cached or computed on the fly (or loaded)
+systems can specify if they are ok to run on outdated data or if they need the most recent (calculated earlier in the same frame). this can be done by specifying who is responsible for this update and should run before this system or it can also be done by just specifying that you want the most recent data for that data type and using the insertion order.
+
+secondary data: data that can be entirely derived from existing data in a single frame.
+primary data is all other data. it must be persisted to have a full save.
+
+for example, loaded models are secondary data, because they can be loaded back from other data: the model on disk + a model handle on an entity refering to the model on disk.
+
+the entirety of the asset system is secondary data where primary data is on disk.
+
+primary data is always persisted. secondary data can either be cached or reset/built every frame.
+the ascii buffer for rendering is built every frame.
+the gpu handles are cached and updated. the entity hierarchy is persisted between frame for performance and updated. both could be rebuilt entirely from a frame state if needed.
+
+some secondary data can be persisted on disk if it takes to long to derive at runtime. (ie maps)
+
+events (tell system to do something or receive key event) and actions (syscalls, gpu) are signals and not data. they can be stored for analysis of what happened but it is not useful to use them.
+however, we can store key events in another way: from the raw key event update a keymap primary data, which causes the other data to update (this key is pressed, so we should more the player)
+
+the same data can be both primary and secondary.
+for example, we can fill an item definition by hand, but also use a generator to batch create them.
+when this occurs, we should split have a primary item definition and a secondary "runtime" item definition. the secondary one is the result of a merge between the copy of the hand written and generated one. (how not to duplicate memory?)
+
+during a frame, the primary data will change. at the end of the frame, you'll have new primary data.
+in between frames, primary data should be complete. (how to handle long operations so they don't freeze everything?)
+
+options specified by data:
+* primary or secondary?
+* if secondary, cached and updated or dropped?
+
+options specified by systems:
+* which data you need as inputs (if requesting derived data, will ensure that it must be loaded)
+* which data you output (what you write)
+
+event handlers:
+* inputs (primary (keybinds) and derived data (window handle))
+* outputs (primary data)
+
+actions:
+* inputs (primary (user graphics settings) or derived data (windom handle))
+* outputs (derived data)
+
+some systems should run on demand (when data they depend on has changed) while others should run every frame (to derive non-cached data).
+this can be guessed automatically by checking the outputs. if you have at least one primary output, you should always run.
+if your outputs are only secondaries and you have at least one non-cached data, you should always run.
+if you only have cached secondaries, you should run only if your inputs have changed
+
+we don't need the distinction between systems, event handlers and actions.
+
+if we write data 1 that is used to derive data 2, then run a system that requires data 2, should we derive data 2 after data 1 is written, then run our system?
