@@ -2,8 +2,8 @@ const std = @import("std");
 const archetype = @import("./archetype.zig");
 const Archetype = archetype.Archetype;
 
-const testTypeSlices = &[_][]const type {
-    &[_]type{u32, u64},
+const testTypeSlices = &[_][]const type{
+    &[_]type{ u32, u64 },
 };
 
 /// Converts a slice of slices of types into a slice of tuple types.
@@ -21,7 +21,6 @@ pub fn tupleSliceToArchetypeSlice(comptime tuple_ty: []const type) [tuple_ty.len
         generated_storages[i] = Archetype(tuple_ty[i]);
     }
     return generated_storages;
-
 }
 
 /// Instanciates a tuple containing archetype storages for all tuple types.
@@ -56,7 +55,7 @@ pub fn pointersTupleToTypes(comptime tuple: anytype) [countFields(tuple)]type {
         const field_info = @typeInfo(field_type);
         // We have a tuple of types, where the types are pointers to type
         if (field_info != .Pointer) {
-            @compileError("Iter arguments must be tuple of pointers. Got "++@typeName(field_type));
+            @compileError("Iter arguments must be tuple of pointers. Got " ++ @typeName(field_type));
         }
         user_types[i] = field_info.Pointer.child;
     }
@@ -74,7 +73,7 @@ pub fn pointersTupleToSlices(comptime tuple: anytype) [countFields(tuple)]type {
         const field_info = @typeInfo(field_type);
         // We have a tuple of types, where the types are pointers to type
         if (field_info != .Pointer) {
-            @compileError("Iter arguments must be tuple of pointers. Got "++@typeName(field_type));
+            @compileError("Iter arguments must be tuple of pointers. Got " ++ @typeName(field_type));
         }
         if (field_info.Pointer.is_const) {
             converted_slice_types[i] = []const field_info.Pointer.child;
@@ -128,4 +127,3 @@ pub fn output_iter_ty(comptime archetype_types: []const []const type, comptime t
     const tuple_ty = output_tuple_ty(types);
     return [count]tuple_ty;
 }
-

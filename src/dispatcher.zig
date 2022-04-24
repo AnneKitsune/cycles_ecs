@@ -77,11 +77,11 @@ fn pointer_to_struct_type(comptime Target: type, structure: anytype) ?*Target {
 }
 
 // Tests
-const TestComponentA = struct{
+const TestComponentA = struct {
     a: i32,
 };
-const TestResourceA = struct{};
-const TestArchetypes = Archetypes(&[_][]const type {
+const TestResourceA = struct {};
+const TestArchetypes = Archetypes(&[_][]const type{
     &[_]type{TestComponentA},
 });
 
@@ -91,7 +91,7 @@ const TestWorld = struct {
 
     const S = @This();
     pub fn init() !S {
-        return S {
+        return S{
             .ecs = try TestArchetypes.init(std.testing.allocator),
             .resource_a = TestResourceA{},
         };
@@ -103,8 +103,7 @@ const TestWorld = struct {
 
 fn testSystemEmpty() void {}
 
-fn testSystemResource(_: *TestResourceA) void {
-}
+fn testSystemResource(_: *TestResourceA) void {}
 
 //fn testSystemQuery(_: Query(.{*TestComponentA})) void {
 //}

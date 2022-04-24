@@ -6,7 +6,7 @@ pub const Entity = struct {
     id: u64,
     const S = @This();
     pub fn new() S {
-        return S {
+        return S{
             .id = next_id.fetchAdd(1, .Monotonic),
         };
     }

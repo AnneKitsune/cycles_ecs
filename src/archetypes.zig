@@ -17,7 +17,7 @@ pub fn Archetypes(comptime type_slice: []const []const type) type {
 
         const S = @This();
         pub fn init(allocator: std.mem.Allocator) !S {
-            var s = S {
+            var s = S{
                 .archetypes = try comptime_utils.generateArchetypesStorage(archetypes_types, allocator),
                 .entity_map = std.AutoArrayHashMap(Entity, u16).init(allocator),
             };
@@ -62,7 +62,7 @@ pub fn Archetypes(comptime type_slice: []const []const type) type {
                     return entity;
                 }
             }
-            @compileError("Failed to find archetype for type: "++@typeName(@TypeOf(data)));
+            @compileError("Failed to find archetype for type: " ++ @typeName(@TypeOf(data)));
         }
         pub fn remove(self: *S, entity: Entity) void {
             if (self.entity_map.fetchSwapRemove(entity)) |kv| {
@@ -141,7 +141,7 @@ pub fn Archetypes(comptime type_slice: []const []const type) type {
 test "archetypes" {
     // create archetype storage
     var archetypes = try Archetypes(&[_][]const type{
-        &[_]type{u32, u64},
+        &[_]type{ u32, u64 },
         &[_]type{u32},
         &[_]type{u64},
     }).init(std.testing.allocator);
@@ -158,7 +158,7 @@ test "archetypes" {
     try std.testing.expect(archetypes.archetypes.@"1".data.slice().len == 0);
 
     // iter
-    const slices = archetypes.iter(.{*u32, *const u64});
+    const slices = archetypes.iter(.{ *u32, *const u64 });
     for (slices) |slice| {
         var i: usize = 0;
         while (i < slice[0].len) : (i += 1) {

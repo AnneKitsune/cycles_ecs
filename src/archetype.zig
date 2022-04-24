@@ -12,7 +12,7 @@ pub fn Archetype(comptime tuple: anytype) type {
             const ty = std.MultiArrayList(types);
             var multi: ty = ty{};
             try multi.ensureTotalCapacity(allocator, 8);
-            return S {
+            return S{
                 .data = multi,
                 .alloc = allocator,
             };
@@ -28,4 +28,3 @@ pub fn Archetype(comptime tuple: anytype) type {
         }
     };
 }
-
