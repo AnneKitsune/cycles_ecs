@@ -2,7 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 
 pub const Entity = @import("entity.zig").Entity;
-pub const Archetypes = @import("archetype.zig").Archetypes;
+pub const Archetypes = @import("archetypes.zig").Archetypes;
 
 // entity { alive list (id, gen), dead list }
 // system { args }
