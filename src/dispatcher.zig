@@ -10,8 +10,47 @@ pub fn Dispatcher(comptime world_ty: type, systems: anytype) type {
                 callSystem(world, system);
             }
         }
-        //pub fn run_par(self: *S, world: *world_ty) void {
-        //}
+        pub fn run_par(_: *S, world: *world_ty) void {
+            @setEvalBranchQuota(100_000);
+
+            const system_count = std.meta.fields(@TypeOf(systems)).len;
+            comptime var system_running: [system_count]bool = false ** system_count;
+            const systems_fields = std.meta.fields(@TypeOf(systems));
+            var system_frames: [system_count]anyframe = undefined;
+
+            // Iter over systems
+            inline for (systems_fields) |field, i| {
+                const system = field.ty;
+                const system_borrows = systemArgs(system);
+                inline for (system_borrows) |borrow| {
+                    // Check that no currently running systems borrows it too in
+                    // an incompatible way.
+                    inline for (system_running) |running, check_i| {
+                        if (!running) {
+                            continue;
+                        }
+                        // Check borrows
+                        const running_borrows = systemArgs(systems_fields[check_i].ty);
+
+                        // Force the system to complete before we run our system?
+                        comptime var force_complete = false;
+                        for (running_borrows) |running_borrow| {
+                            if (borrow.ty == running_borrow.ty) {
+                                if (borrow.mut || running_borrow.mut) {
+                                    force_complete = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (force_complete) {
+                            await system_frames[i];
+                            system_running[check_i] = false;
+                        }
+                    }
+                }
+                system_frames[i] = &async callSystem(world, @field(systems, field.name));
+            }
+        }
     };
 }
 
@@ -32,25 +71,37 @@ pub fn callSystem(world: anytype, system: anytype) void {
     }
 
     // get the ptr types of all the system args.
-    comptime var types: [fn_info.Fn.args.len]type = undefined;
+    const types = systemArgs(system);
+
+    var world_pointers: std.meta.ArgsTuple(@TypeOf(system)) = undefined;
+    inline for (types) |t, i| {
+        // returns a pointer to a field of type t in world.
+        const new_ptr = pointer_to_struct_type(t.ty, world) orelse @panic("Provided world misses a field of the following type that the system requires: " ++ @typeName(t));
+        world_pointers[i] = new_ptr;
+    }
+
+    const options = std.builtin.CallOptions{};
+    @call(options, system, world_pointers);
+}
+
+const ResBorrow = struct {
+    ty: type,
+    mut: bool,
+};
+
+pub fn systemArgs(system: anytype) [@typeInfo(@TypeOf(system)).Fn.args.len]ResBorrow {
+    const fn_info = @typeInfo(@TypeOf(system));
+    comptime var types: [fn_info.Fn.args.len]ResBorrow = undefined;
     inline for (fn_info.Fn.args) |arg, i| {
         const arg_type = arg.arg_type orelse @compileError("Argument has no type, are you using generic parameters?");
         const arg_info = @typeInfo(arg_type);
         if (arg_info != .Pointer) {
             @compileError("System arguments must be pointers.");
         }
-        types[i] = arg_info.Pointer.child;
+        types[i].ty = arg_info.Pointer.child;
+        types[i].mut = !arg_info.Pointer.is_const;
     }
-
-    var world_pointers: std.meta.ArgsTuple(@TypeOf(system)) = undefined;
-    inline for (types) |t, i| {
-        // returns a pointer to a field of type t in world.
-        const new_ptr = pointer_to_struct_type(t, world) orelse @panic("Provided world misses a field of the following type that the system requires: " ++ @typeName(t));
-        world_pointers[i] = new_ptr;
-    }
-
-    const options = std.builtin.CallOptions{};
-    @call(options, system, world_pointers);
+    return types;
 }
 
 /// Returns a pointer to the first field of the provided runtime structure that has
