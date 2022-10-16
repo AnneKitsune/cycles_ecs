@@ -62,7 +62,7 @@ pub fn Dispatcher(comptime world_ty: type, systems: anytype) type {
 ///
 /// Generics cannot be used. For this, create a wrapping generic struct that will create
 /// a concrete function.
-pub fn callSystem(world: anytype, system: anytype) void {
+pub fn callSystem(world: anytype, comptime system: anytype) void {
     const fn_info = @typeInfo(@TypeOf(system));
 
     // check that the input is a function.
@@ -71,12 +71,12 @@ pub fn callSystem(world: anytype, system: anytype) void {
     }
 
     // get the ptr types of all the system args.
-    const types = systemArgs(system);
+    const types = comptime systemArgs(system);
 
     var world_pointers: std.meta.ArgsTuple(@TypeOf(system)) = undefined;
     inline for (types) |t, i| {
         // returns a pointer to a field of type t in world.
-        const new_ptr = pointer_to_struct_type(t.ty, world) orelse @panic("Provided world misses a field of the following type that the system requires: " ++ @typeName(t));
+        const new_ptr = pointer_to_struct_type(t.ty, world) orelse @panic("Provided world misses a field of the following type that the system requires: " ++ @typeName(@TypeOf(t)));
         world_pointers[i] = new_ptr;
     }
 
