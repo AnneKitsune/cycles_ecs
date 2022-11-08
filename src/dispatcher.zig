@@ -10,17 +10,22 @@ pub fn Dispatcher(comptime world_ty: type, systems: anytype) type {
                 callSystem(world, system);
             }
         }
-        pub fn run_par(_: *S, world: *world_ty) void {
+        pub fn run_par(s: *S, world: *world_ty) void {
+            _ = s;
             @setEvalBranchQuota(100_000);
 
             const system_count = std.meta.fields(@TypeOf(systems)).len;
-            comptime var system_running: [system_count]bool = false ** system_count;
+            comptime var system_running: [system_count]bool = undefined;
+            inline for (system_running) |*b| {
+                b.* = false;
+            }
+
             const systems_fields = std.meta.fields(@TypeOf(systems));
-            var system_frames: [system_count]anyframe = undefined;
+            var system_frames: [system_count]anyframe->void = undefined;
 
             // Iter over systems
             inline for (systems_fields) |field, i| {
-                const system = field.ty;
+                const system = @field(systems, field.name);
                 const system_borrows = systemArgs(system);
                 inline for (system_borrows) |borrow| {
                     // Check that no currently running systems borrows it too in
@@ -50,6 +55,17 @@ pub fn Dispatcher(comptime world_ty: type, systems: anytype) type {
                 }
                 system_frames[i] = &async callSystem(world, @field(systems, field.name));
             }
+
+            // Await remaining systems
+            for (system_running) |*running, i| {
+                if (running.*) {
+                    await system_frames[i];
+                    running.* = false;
+                }
+            }
+
+            // debug ensure all system did run and are not running anymore
+            // TODO
         }
     };
 }
@@ -147,8 +163,8 @@ const TestWorld = struct {
             .resource_a = TestResourceA{},
         };
     }
-    pub fn deinit(self: *S) void {
-        self.ecs.deinit();
+    pub fn deinit(s: *S) void {
+        s.ecs.deinit();
     }
 };
 
@@ -156,8 +172,8 @@ fn testSystemEmpty() void {}
 
 fn testSystemResource(_: *TestResourceA) void {}
 
-//fn testSystemQuery(_: Query(.{*TestComponentA})) void {
-//}
+fn testSystemQuery(_: Query(.{*TestComponentA})) void {
+}
 
 test "Dispatch seq" {
     var world = try TestWorld.init();
@@ -169,4 +185,16 @@ test "Dispatch seq" {
         //testSystemQuery,
     }){};
     dispatcher.run_seq(&world);
+}
+
+test "Dispatch par" {
+    var world = try TestWorld.init();
+    defer world.deinit();
+
+    var dispatcher = Dispatcher(TestWorld, .{
+        testSystemEmpty,
+        testSystemResource,
+        //testSystemQuery,
+    }){};
+    dispatcher.run_par(&world);
 }

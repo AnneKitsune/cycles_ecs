@@ -18,7 +18,8 @@ pub fn build(b: *std.build.Builder) void {
     const archetypes_tests = b.addTest("src/archetypes.zig");
     archetypes_tests.setBuildMode(mode);
     const dispatcher_tests = b.addTest("src/dispatcher.zig");
-    dispatcher_tests .setBuildMode(mode);
+    dispatcher_tests.setBuildMode(mode);
+    dispatcher_tests.test_evented_io = true;
     const comptime_utils_tests = b.addTest("src/comptime_utils.zig");
     comptime_utils_tests.setBuildMode(mode);
 
