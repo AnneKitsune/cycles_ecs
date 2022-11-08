@@ -172,8 +172,7 @@ fn testSystemEmpty() void {}
 
 fn testSystemResource(_: *TestResourceA) void {}
 
-fn testSystemQuery(_: Query(.{*TestComponentA})) void {
-}
+fn testSystemQuery(_: Query(.{*TestComponentA})) void {}
 
 test "Dispatch seq" {
     var world = try TestWorld.init();
