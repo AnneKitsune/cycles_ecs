@@ -3,7 +3,6 @@ const Entity = @import("entity.zig").Entity;
 const comptime_utils = @import("comptime_utils.zig");
 const Archetype = @import("archetype.zig").Archetype;
 
-// TODO check if we want to use a tuple of structs here instead.
 pub fn Archetypes(comptime type_slice: []const []const type) type {
     // Convert []const []const type to Tuple(Archetype(Tuple([]const type)))
     const generated_tuples = comptime_utils.typeSliceToTuples(type_slice);
