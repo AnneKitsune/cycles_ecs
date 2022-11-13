@@ -1,6 +1,8 @@
 const std = @import("std");
 const Archetypes = @import("archetypes.zig").Archetypes;
 const Query = @import("query.zig").Query;
+const comptime_utils = @import("comptime_utils.zig");
+
 pub fn Dispatcher(comptime world_ty: type, systems: anytype) type {
     return struct {
         const S = @This();
@@ -10,8 +12,7 @@ pub fn Dispatcher(comptime world_ty: type, systems: anytype) type {
                 callSystem(world, system);
             }
         }
-        pub fn run_par(s: *S, world: *world_ty) void {
-            _ = s;
+        pub fn run_par(_: *S, world: *world_ty) void {
             @setEvalBranchQuota(100_000);
 
             const system_count = std.meta.fields(@TypeOf(systems)).len;
@@ -27,7 +28,9 @@ pub fn Dispatcher(comptime world_ty: type, systems: anytype) type {
             inline for (systems_fields) |field, i| {
                 const system = @field(systems, field.name);
                 const system_borrows = systemArgs(system);
-                inline for (system_borrows) |borrow| {
+                comptime var j: usize = 0;
+                inline while (j < system_borrows.count) : (j += 1) {
+                    const borrow = system_borrows.types[j];
                     // Check that no currently running systems borrows it too in
                     // an incompatible way.
                     inline for (system_running) |running, check_i| {
@@ -64,8 +67,7 @@ pub fn Dispatcher(comptime world_ty: type, systems: anytype) type {
                 }
             }
 
-            // debug ensure all system did run and are not running anymore
-            // TODO
+            // TODO debug ensure all system did run and are not running anymore
         }
     };
 }
@@ -89,35 +91,90 @@ pub fn callSystem(world: anytype, comptime system: anytype) void {
     // get the ptr types of all the system args.
     const types = comptime systemArgs(system);
 
+    // get archetypes from world
+    var archetypes = &@field(world, "archetypes");
+
     var world_pointers: std.meta.ArgsTuple(@TypeOf(system)) = undefined;
-    inline for (types) |t, i| {
-        // returns a pointer to a field of type t in world.
-        const new_ptr = pointer_to_struct_type(t.ty, world) orelse @panic("Provided world misses a field of the following type that the system requires: " ++ @typeName(@TypeOf(t)));
-        world_pointers[i] = new_ptr;
+    comptime var i: usize = 0;
+    comptime var at_arg: usize = 0;
+    inline while (i < types.count) : (i += 1) {
+        const ty = types.types[i];
+
+        if (!ty.is_component) {
+            // returns a pointer to a field of type t in world.
+            const new_ptr = pointer_to_struct_type(ty.ty, world) orelse @panic("Provided world misses a field of the following type that the system requires: " ++ @typeName(ty.ty));
+            world_pointers[at_arg] = new_ptr;
+            at_arg += 1;
+        } else {
+            // iterating over query component types
+            inline while (i < types.count and types.types[i].is_component) : (i += 1) {}
+            // create query
+            const query = @TypeOf(world_pointers[at_arg]).init(archetypes);
+            world_pointers[at_arg] = query;
+            at_arg += 1;
+        }
     }
 
     const options = std.builtin.CallOptions{};
     @call(options, system, world_pointers);
 }
 
+
+const MAX_BORROWS = 128;
+const ResBorrows = struct {
+    types: [MAX_BORROWS]ResBorrow = undefined,
+    count: usize = 0,
+};
+
 const ResBorrow = struct {
     ty: type,
     mut: bool,
+    is_component: bool,
 };
 
-pub fn systemArgs(system: anytype) [@typeInfo(@TypeOf(system)).Fn.args.len]ResBorrow {
+pub fn systemArgs(system: anytype) ResBorrows {
     const fn_info = @typeInfo(@TypeOf(system));
-    comptime var types: [fn_info.Fn.args.len]ResBorrow = undefined;
-    inline for (fn_info.Fn.args) |arg, i| {
+    comptime var borrows = ResBorrows{};
+    inline for (fn_info.Fn.args) |arg| {
         const arg_type = arg.arg_type orelse @compileError("Argument has no type, are you using generic parameters?");
         const arg_info = @typeInfo(arg_type);
-        if (arg_info != .Pointer) {
+        if (arg_info == .Pointer) {
+            borrows.types[borrows.count].ty = arg_info.Pointer.child;
+            borrows.types[borrows.count].mut = !arg_info.Pointer.is_const;
+            borrows.types[borrows.count].is_component = false;
+            borrows.count += 1;
+        } else if (arg_info == .Struct) {
+            // Query(.{...}) struct
+            const query_types = comptime_utils.pointersTupleToTypes(arg_type.TYPES);
+            const query_muts = comptime_utils.pointersTupleToMuts(arg_type.TYPES);
+            inline for (query_types) |ty, k| {
+                // check if already exist
+                comptime var dupe = false;
+                comptime var j: usize = 0;
+                while (j < borrows.count) : (j += 1) {
+                    if (borrows.types[j].ty == ty) {
+                        if (query_muts[k]) {
+                            borrows.types[j].mut = true;
+                        }
+                        if (!borrows.types[j].is_component) {
+                            @compileError("The same type is used in both world and archetypes! This is an error. Type: " ++ @typeName(borrows.types[j].ty));
+                        }
+                        dupe = true;
+                    }
+                }
+                if (!dupe) {
+                    // add because it doesn't exist already
+                    borrows.types[borrows.count].ty = ty;
+                    borrows.types[borrows.count].mut = query_muts[k];
+                    borrows.types[borrows.count].is_component = true;
+                    borrows.count += 1;
+                }
+            }
+        } else {
             @compileError("System arguments must be pointers.");
         }
-        types[i].ty = arg_info.Pointer.child;
-        types[i].mut = !arg_info.Pointer.is_const;
     }
-    return types;
+    return borrows;
 }
 
 /// Returns a pointer to the first field of the provided runtime structure that has
@@ -148,23 +205,25 @@ const TestComponentA = struct {
     a: i32,
 };
 const TestResourceA = struct {};
-const TestArchetypes = Archetypes(&[_][]const type{
+
+const TestArchetypesTypes = &[_][]const type{
     &[_]type{TestComponentA},
-});
+};
+const TestArchetypes = Archetypes(TestArchetypesTypes);
 
 const TestWorld = struct {
-    ecs: TestArchetypes,
+    archetypes: TestArchetypes,
     resource_a: TestResourceA,
 
     const S = @This();
     pub fn init() !S {
         return S{
-            .ecs = try TestArchetypes.init(std.testing.allocator),
+            .archetypes = try TestArchetypes.init(std.testing.allocator),
             .resource_a = TestResourceA{},
         };
     }
     pub fn deinit(s: *S) void {
-        s.ecs.deinit();
+        s.archetypes.deinit();
     }
 };
 
@@ -172,7 +231,7 @@ fn testSystemEmpty() void {}
 
 fn testSystemResource(_: *TestResourceA) void {}
 
-fn testSystemQuery(_: Query(.{*TestComponentA})) void {}
+fn testSystemQuery(_: Query(.{*TestComponentA}, TestArchetypesTypes)) void {}
 
 test "Dispatch seq" {
     var world = try TestWorld.init();
@@ -181,7 +240,7 @@ test "Dispatch seq" {
     var dispatcher = Dispatcher(TestWorld, .{
         testSystemEmpty,
         testSystemResource,
-        //testSystemQuery,
+        testSystemQuery,
     }){};
     dispatcher.run_seq(&world);
 }
@@ -193,7 +252,7 @@ test "Dispatch par" {
     var dispatcher = Dispatcher(TestWorld, .{
         testSystemEmpty,
         testSystemResource,
-        //testSystemQuery,
+        testSystemQuery,
     }){};
     dispatcher.run_par(&world);
 }

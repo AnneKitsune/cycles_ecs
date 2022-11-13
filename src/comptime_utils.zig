@@ -62,6 +62,22 @@ pub fn pointersTupleToTypes(comptime tuple: anytype) [countFields(tuple)]type {
     return user_types;
 }
 
+pub fn pointersTupleToMuts(comptime tuple: anytype) [countFields(tuple)]bool {
+    const tuple_fields = std.meta.fields(@TypeOf(tuple));
+
+    comptime var user_types: [countFields(tuple)]bool = undefined;
+    inline for (tuple_fields) |field, i| {
+        const field_type = @field(tuple, field.name);
+        const field_info = @typeInfo(field_type);
+        // We have a tuple of types, where the types are pointers to type
+        if (field_info != .Pointer) {
+            @compileError("Iter arguments must be tuple of pointers. Got " ++ @typeName(field_type));
+        }
+        user_types[i] = !field_info.Pointer.is_const;
+    }
+    return user_types;
+}
+
 /// Converts a tuple of pointers to a slice of (const/non const) slices of those types.
 /// For example, `pointersTupleToSlices(.{*A, *const B})` would return `.{[]A, []const B}`.
 pub fn pointersTupleToSlices(comptime tuple: anytype) [countFields(tuple)]type {
