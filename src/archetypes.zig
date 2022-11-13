@@ -54,8 +54,7 @@ pub fn Archetypes(comptime type_slice: []const []const type) type {
                             @field(converted, f.name) = @field(data, data_fields[i].name);
                         }
                     }
-                    try archetype.insert(converted);
-                    const entity = Entity.new();
+                    const entity = try archetype.insert(converted);
                     try self.entity_map.put(entity, arch_id);
                     // Runtime end.
                     return entity;
@@ -63,16 +62,15 @@ pub fn Archetypes(comptime type_slice: []const []const type) type {
             }
             @compileError("Failed to find archetype for type: " ++ @typeName(@TypeOf(data)));
         }
-        pub fn remove(self: *S, entity: Entity) void {
+        pub fn remove(self: *S, entity: Entity) !void {
             if (self.entity_map.fetchSwapRemove(entity)) |kv| {
                 const arch_id = kv.value;
-                const id = @as(usize, entity.id);
                 inline for (std.meta.fields(archetypes_types)) |field, i| {
                     // TODO optimize using an array of functions ptr
                     if (i == arch_id) {
                         // BUG this uses a global entity index to index into a local archetype storage
                         // there's no Entity -> archetype storage id map because the swap remove operations will invalidate the storage id
-                        @field(self.archetypes, field.name).remove(id);
+                        try @field(self.archetypes, field.name).remove(entity);
                         return;
                     }
                 }
@@ -155,7 +153,7 @@ test "archetypes" {
     try std.testing.expect(archetypes.archetypes.@"1".data.slice().len == 1);
 
     // remove archetype
-    archetypes.remove(ent1);
+    try archetypes.remove(ent1);
     try std.testing.expect(archetypes.archetypes.@"1".data.slice().len == 0);
 
     // iter
