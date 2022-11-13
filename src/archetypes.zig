@@ -71,6 +71,8 @@ pub fn Archetypes(comptime type_slice: []const []const type) type {
                 inline for (std.meta.fields(archetypes_types)) |field, i| {
                     // TODO optimize using an array of functions ptr
                     if (i == arch_id) {
+                        // BUG this uses a global entity index to index into a local archetype storage
+                        // there's no Entity -> archetype storage id map because the swap remove operations will invalidate the storage id
                         @field(self.archetypes, field.name).remove(id);
                         return;
                     }

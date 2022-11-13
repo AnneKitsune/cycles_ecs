@@ -231,7 +231,14 @@ fn testSystemEmpty() void {}
 
 fn testSystemResource(_: *TestResourceA) void {}
 
-fn testSystemQuery(_: Query(.{*TestComponentA}, TestArchetypesTypes)) void {}
+fn testSystemQuery(query: Query(.{*TestComponentA}, TestArchetypesTypes)) void {
+    for (query.slices) |slice| {
+        var i: usize = 0;
+        while (i < slice[0].len) : (i += 1) {
+            slice[0][i].a += 1;
+        }
+    }
+}
 
 test "Dispatch seq" {
     var world = try TestWorld.init();
@@ -249,10 +256,16 @@ test "Dispatch par" {
     var world = try TestWorld.init();
     defer world.deinit();
 
+    _ = try world.archetypes.insert(.{TestComponentA{
+        .a = 0,
+    }});
+
     var dispatcher = Dispatcher(TestWorld, .{
         testSystemEmpty,
         testSystemResource,
         testSystemQuery,
     }){};
     dispatcher.run_par(&world);
+
+    try std.testing.expectEqual(@as(i32, 1), world.archetypes.archetypes.@"0".data.slice().items(.@"0")[0].a);
 }
