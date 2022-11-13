@@ -119,7 +119,6 @@ pub fn callSystem(world: anytype, comptime system: anytype) void {
     @call(options, system, world_pointers);
 }
 
-
 const MAX_BORROWS = 128;
 const ResBorrows = struct {
     types: [MAX_BORROWS]ResBorrow = undefined,

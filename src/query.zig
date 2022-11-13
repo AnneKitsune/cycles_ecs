@@ -5,7 +5,7 @@ pub fn Query(comptime requested_types: anytype, comptime archetype_types: []cons
         const S = @This();
         pub const TYPES = requested_types;
         pub fn init(archetypes: anytype) S {
-            return S {
+            return S{
                 .slices = archetypes.iter(requested_types),
             };
         }
