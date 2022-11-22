@@ -16,11 +16,10 @@ pub fn Archetypes(comptime type_slice: []const []const type) type {
 
         const S = @This();
         pub fn init(allocator: std.mem.Allocator) !S {
-            var s = S{
+            return S{
                 .archetypes = try comptime_utils.generateArchetypesStorage(archetypes_types, allocator),
                 .entity_map = std.AutoArrayHashMap(Entity, u16).init(allocator),
             };
-            return s;
         }
 
         pub fn deinit(self: *S) void {
