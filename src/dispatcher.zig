@@ -60,14 +60,12 @@ pub fn Dispatcher(comptime world_ty: type, systems: anytype) type {
             }
 
             // Await remaining systems
-            for (system_running) |*running, i| {
+            inline for (system_running) |*running, i| {
                 if (running.*) {
                     await system_frames[i];
                     running.* = false;
                 }
             }
-
-            // TODO debug ensure all system did run and are not running anymore
         }
     };
 }
