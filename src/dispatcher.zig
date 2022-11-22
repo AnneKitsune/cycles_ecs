@@ -142,8 +142,8 @@ pub fn systemArgs(system: anytype) ResBorrows {
             borrows.count += 1;
         } else if (arg_info == .Struct) {
             // Query(.{...}) struct
-            const query_types = comptime_utils.pointersTupleToTypes(arg_type.TYPES);
-            const query_muts = comptime_utils.pointersTupleToMuts(arg_type.TYPES);
+            const query_types = comptime_utils.innerTypesFromPointersTuple(arg_type.TYPES);
+            const query_muts = comptime_utils.innerMutabilityFromPointersTuple(arg_type.TYPES);
             inline for (query_types) |ty, k| {
                 // check if already exist
                 comptime var dupe = false;

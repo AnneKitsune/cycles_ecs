@@ -5,8 +5,8 @@ const Archetype = @import("archetype.zig").Archetype;
 
 pub fn Archetypes(comptime type_slice: []const []const type) type {
     // Convert []const []const type to Tuple(Archetype(Tuple([]const type)))
-    const generated_tuples = comptime_utils.typeSliceToTuples(type_slice);
-    const generated_storages = comptime_utils.tupleSliceToArchetypeSlice(&generated_tuples);
+    const generated_tuples = comptime_utils.tuplesFromTypeSlices(type_slice);
+    const generated_storages = comptime_utils.archetypeSliceFromTupleSlice(&generated_tuples);
 
     const archetypes_types = std.meta.Tuple(&generated_storages);
 
@@ -79,12 +79,12 @@ pub fn Archetypes(comptime type_slice: []const []const type) type {
         /// Returns a slice over slices of the requested query type.
         /// A query of .{*const A, *B} over {A,B},{A} archetypes will return
         /// []{.{[]const A, []B}}
-        pub fn iter(self: *S, comptime types: anytype) comptime_utils.output_iter_ty(type_slice, types) {
+        pub fn iter(self: *S, comptime types: anytype) comptime_utils.componentSlicesFromQueryTuple(type_slice, types) {
             // Find all archetypes containing all types pointed to by the pointers.
 
-            const user_types = comptime_utils.pointersTupleToTypes(types);
+            const user_types = comptime_utils.innerTypesFromPointersTuple(types);
 
-            const converted_output_type = comptime_utils.output_iter_ty(type_slice, types);
+            const converted_output_type = comptime_utils.componentSlicesFromQueryTuple(type_slice, types);
             var all: converted_output_type = undefined;
             const converted_user_tuple_type = @TypeOf(all[0]);
             comptime var insert_idx = 0;

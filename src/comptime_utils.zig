@@ -7,7 +7,7 @@ const testTypeSlices = &[_][]const type{
 };
 
 /// Converts a slice of slices of types into a slice of tuple types.
-pub fn typeSliceToTuples(comptime type_slice: []const []const type) [type_slice.len]type {
+pub fn tuplesFromTypeSlices(comptime type_slice: []const []const type) [type_slice.len]type {
     comptime var generated_tuples: [type_slice.len]type = undefined;
     inline for (type_slice) |inner_types, i| {
         generated_tuples[i] = std.meta.Tuple(inner_types);
@@ -15,7 +15,7 @@ pub fn typeSliceToTuples(comptime type_slice: []const []const type) [type_slice.
     return generated_tuples;
 }
 
-pub fn tupleSliceToArchetypeSlice(comptime tuple_ty: []const type) [tuple_ty.len]type {
+pub fn archetypeSliceFromTupleSlice(comptime tuple_ty: []const type) [tuple_ty.len]type {
     comptime var generated_storages: [tuple_ty.len]type = undefined;
     inline for (tuple_ty) |_, i| {
         generated_storages[i] = Archetype(tuple_ty[i]);
@@ -46,7 +46,7 @@ pub fn countFields(comptime types: anytype) usize {
 }
 
 /// Converts a tuple pointers to a slice of the inner types.
-pub fn pointersTupleToTypes(comptime tuple: anytype) [countFields(tuple)]type {
+pub fn innerTypesFromPointersTuple(comptime tuple: anytype) [countFields(tuple)]type {
     const tuple_fields = std.meta.fields(@TypeOf(tuple));
 
     comptime var user_types: [countFields(tuple)]type = undefined;
@@ -62,7 +62,7 @@ pub fn pointersTupleToTypes(comptime tuple: anytype) [countFields(tuple)]type {
     return user_types;
 }
 
-pub fn pointersTupleToMuts(comptime tuple: anytype) [countFields(tuple)]bool {
+pub fn innerMutabilityFromPointersTuple(comptime tuple: anytype) [countFields(tuple)]bool {
     const tuple_fields = std.meta.fields(@TypeOf(tuple));
 
     comptime var user_types: [countFields(tuple)]bool = undefined;
@@ -79,8 +79,8 @@ pub fn pointersTupleToMuts(comptime tuple: anytype) [countFields(tuple)]bool {
 }
 
 /// Converts a tuple of pointers to a slice of (const/non const) slices of those types.
-/// For example, `pointersTupleToSlices(.{*A, *const B})` would return `.{[]A, []const B}`.
-pub fn pointersTupleToSlices(comptime tuple: anytype) [countFields(tuple)]type {
+/// For example, `slicesFromPointersTuple(.{*A, *const B})` would return `.{[]A, []const B}`.
+pub fn slicesFromPointersTuple(comptime tuple: anytype) [countFields(tuple)]type {
     const tuple_fields = std.meta.fields(@TypeOf(tuple));
 
     comptime var converted_slice_types: [countFields(tuple)]type = undefined;
@@ -101,8 +101,8 @@ pub fn pointersTupleToSlices(comptime tuple: anytype) [countFields(tuple)]type {
 }
 
 /// For the provided list of allowed archetype type tuples, figures out how many the query will need access to.
-pub fn count_compatible_slices(comptime archetype_types: []const []const type, comptime query_types: anytype) usize {
-    const generated_tuples = typeSliceToTuples(archetype_types);
+pub fn countCompatibleSlices(comptime archetype_types: []const []const type, comptime query_types: anytype) usize {
+    const generated_tuples = tuplesFromTypeSlices(archetype_types);
 
     comptime var slice_count = 0;
     // for self.archetypes find matching
@@ -132,14 +132,14 @@ pub fn count_compatible_slices(comptime archetype_types: []const []const type, c
 }
 
 /// Provided a query tuple type, returns the tuple type of slices to those types.
-pub fn output_tuple_ty(comptime types: anytype) type {
-    return std.meta.Tuple(&pointersTupleToSlices(types));
+pub fn outputTupleFromQueryTuple(comptime types: anytype) type {
+    return std.meta.Tuple(&slicesFromPointersTuple(types));
 }
 
 /// Provided a query tuple type, returns a slice of archetype storage slices.
-pub fn output_iter_ty(comptime archetype_types: []const []const type, comptime types: anytype) type {
-    const inner_types = pointersTupleToTypes(types);
-    const count = count_compatible_slices(archetype_types, inner_types);
-    const tuple_ty = output_tuple_ty(types);
+pub fn componentSlicesFromQueryTuple(comptime archetype_types: []const []const type, comptime types: anytype) type {
+    const inner_types = innerTypesFromPointersTuple(types);
+    const count = countCompatibleSlices(archetype_types, inner_types);
+    const tuple_ty = outputTupleFromQueryTuple(types);
     return [count]tuple_ty;
 }
