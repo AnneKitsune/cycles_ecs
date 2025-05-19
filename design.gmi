@@ -169,3 +169,130 @@ if you only have cached secondaries, you should run only if your inputs have cha
 we don't need the distinction between systems, event handlers and actions.
 
 if we write data 1 that is used to derive data 2, then run a system that requires data 2, should we derive data 2 after data 1 is written, then run our system?
+
+## Questions
+
+Is the loss of convenience from having to manually specify all possible archetypes and transitions worth the gain in performance.
+
+performance cost of dynamism:
+- on every query: archetypes_count * cost(bitset256_AND)
+
+## Amethyst observations
+- most systems use resources and not a lot of queries
+- indirect "function-like" calls between systems using events (useful because the calling system doesn't need access to the callee's resources)
+- some system-specific state (caches, partially processed data)
+- systems can create/delete entities or modify them
+- access one component depending on data in other components of the same entity or other entity
+- we often make use of maybe_changed instead of manually marking the component as dirty
+
+entities can have dozens of components but often we query only 2 or 3. this would lead to
+a lot of data being loaded from memory but never accessed when using archetypes.
+
+could use a mix of dense and sparse storages to offset the cost of AND operations.
+the sparse storage would check into the given bitset if the bits are set.
+
+sparse set: hashmap of entity id
+compare worst time_iter_entity1 * time_hashmap_exists_entity2
+memory optimal
+mem access random in different small arrays
+
+dense: bitset where index is entity id
+compare always max_entity / 64 bitwise AND
+memory near optimal
+mem access in multiple arrays but with few holes
+
+always storage: assume all entities have the component
+
+archetype:
+compare always archetype_count * count(bitset256_AND)
+memory optimal
+mem access in single array at a time but with useless data which reduces efficiency
+
+## Benchmark proposal
+
+Compare access times of the following:
+- array of (u64 * 8) where we only access the 3 first ones (archetype)
+- contiguous accesses in three arrays that have gaps every 5 and 7 slots (dense)
+- random accesses in three arrays where we hit only
+
+doesn't work because archetypes actually use different fully contiguous arrays
+
+## Runtime archetypal
+
+struct Archetypes <components> {
+    HashMap<bitset derived from components at comptime, *ArchetypeStorageInterface>,
+    EntityManager,
+
+    fn addComponent(entity, component) {
+        get storage from manager
+        remove from storage
+        find new storage or create
+        insert in storage
+        // not really possible since when removing from the storage we won't know the type at compile time
+        // would need to calculate how to map the components from one storage to the other
+        // sounds hard to do since we would jump into untyped territory (since entities would be "runtime typed")
+    }
+}
+struct ArchetypeStorage<archetype_components> {
+    HashMap<u64 entity id, internal idx>,
+    data: MultiArrayList<archetype_components>
+}
+
+struct EntityManager {
+    HashMap<u64, bitset components>
+}
+
+overhead by entity component variants: hashmap + multiarraylist
+
+usage:
+
+fn mySystem(ents: Entities, Query(.{u1, u2, u3}), Archetype(.{
+
+involves creating a kind of typing system at runtime, which isn't easy to do
+
+## Composition approach
+
+const Monster = struct {
+    id: u64,
+    transform: Transform,
+    mesh: MeshHandle,
+    texture: TextureHandle,
+    physics: PhysicsHandle,
+    behavior: .goblin,
+    targeted: bool,
+}
+
+const Monsters = MultiArrayList(Monster);
+
+var monsters = Monsters.init();
+
+fn updatePhysics() void {
+    // simplest, slow
+    for (monsters) |*monster| {
+        monster.transform = physics.getTransform(monster.physics);
+    }
+
+    // manual over diffent things, not exactly optimal because you need the targeted bool
+    // for all monsters while that could be stored in a SparseSet instead to save space
+    for (monsters.slice(.{.transform, .physics})) |*monster| {
+        monster.transform = physics.getTransform(monster.physics);
+    }
+    for (allies.slice(.{.transform, .physics})) |*allies| {
+        allies.transform = physics.getTransform(allies.physics);
+    }
+}
+
+// a bit optimised so the more rare thing is in a separate place
+const Monster = struct {
+    id: u64,
+    transform: Transform,
+    mesh: MeshHandle,
+    texture: TextureHandle,
+    physics: PhysicsHandle,
+    behavior: .goblin,
+}
+
+const TargetedMonsters = ArrayList(u32);
+
+
+the manual composition method is also messy...

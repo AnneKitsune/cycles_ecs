@@ -3,41 +3,52 @@ const Entity = @import("entity.zig").Entity;
 const comptime_utils = @import("comptime_utils.zig");
 const Archetype = @import("archetype.zig").Archetype;
 
-pub fn Archetypes(comptime type_slice: []const []const type) type {
+// TODO disallow archetypes having the same component type more than once.
+pub fn Archetypes(comptime archetypes_component_types: []const []const type) type {
     // Convert []const []const type to Tuple(Archetype(Tuple([]const type)))
-    const generated_tuples = comptime_utils.tuplesFromTypeSlices(type_slice);
-    const generated_storages = comptime_utils.archetypeSliceFromTupleSlice(&generated_tuples);
+    const archetypes_component_tuples = comptime_utils.tuplesFromTypeSlices(archetypes_component_types);
+    const archetypes_component_storages = comptime_utils.archetypeSliceFromTupleSlice(&archetypes_component_tuples);
 
-    const archetypes_types = std.meta.Tuple(&generated_storages);
+    const archetypes_types = std.meta.Tuple(&archetypes_component_storages);
 
     return struct {
         archetypes: archetypes_types,
-        entity_map: std.AutoArrayHashMap(Entity, u16),
+        /// Used to find in which archetype storage an entity is stored.
+        entity_to_storage: std.AutoArrayHashMap(Entity, u16),
 
         const S = @This();
         pub fn init(allocator: std.mem.Allocator) !S {
             return S{
                 .archetypes = try comptime_utils.generateArchetypesStorage(archetypes_types, allocator),
-                .entity_map = std.AutoArrayHashMap(Entity, u16).init(allocator),
+                .entity_to_storage = std.AutoArrayHashMap(Entity, u16).init(allocator),
             };
         }
 
         pub fn deinit(self: *S) void {
             comptime_utils.deinitArchetypesStorage(&self.archetypes);
-            self.entity_map.deinit();
+            self.entity_to_storage.deinit();
         }
 
-        pub fn insert(self: *S, data: anytype) !Entity {
-            const data_fields = std.meta.fields(@TypeOf(data));
-            inline for (generated_tuples) |types_of_archetype, arch_id| {
+        /// Creates a new entity from the provided components tuple.
+        /// The tuple types must match exactly the component types of one archetype AND
+        /// have the same type order.
+        pub fn insert(self: *S, components: anytype) !Entity {
+            const components_fields = std.meta.fields(@TypeOf(components));
+            inline for (archetypes_component_tuples) |types_of_archetype, arch_id| {
+
+                // Check if there is a storage which contains the exact same components
+                // is the data in `components`.
                 const tuple_fields = std.meta.fields(types_of_archetype);
-                if (tuple_fields.len != data_fields.len) {
+                if (tuple_fields.len != components_fields.len) {
                     continue;
                 }
-                // Check if all fields are equal in types
+
+                // Check if all fields are equal in types. Must be the same order.
+                // TODO lift restriction of requiring the same order by mapping `components`
+                // fields to archetype component fields.
                 comptime var mismatch = false;
                 inline for (tuple_fields) |archetype_field, i| {
-                    const left = data_fields[i].field_type;
+                    const left = components_fields[i].field_type;
                     const right = archetype_field.field_type;
                     if (left != right) {
                         mismatch = true;
@@ -47,22 +58,22 @@ pub fn Archetypes(comptime type_slice: []const []const type) type {
                 if (!mismatch) {
                     // Runtime start.
                     var archetype = &@field(self.archetypes, std.meta.fields(archetypes_types)[arch_id].name);
-                    var converted: generated_tuples[arch_id] = undefined;
+                    var converted: archetypes_component_tuples[arch_id] = undefined;
                     comptime {
                         inline for (tuple_fields) |f, i| {
-                            @field(converted, f.name) = @field(data, data_fields[i].name);
+                            @field(converted, f.name) = @field(components, components_fields[i].name);
                         }
                     }
                     const entity = try archetype.insert(converted);
-                    try self.entity_map.put(entity, arch_id);
+                    try self.entity_to_storage.put(entity, arch_id);
                     // Runtime end.
                     return entity;
                 }
             }
-            @compileError("Failed to find archetype for type: " ++ @typeName(@TypeOf(data)));
+            @compileError("Failed to find archetype for type: " ++ @typeName(@TypeOf(components)));
         }
         pub fn remove(self: *S, entity: Entity) !void {
-            if (self.entity_map.fetchSwapRemove(entity)) |kv| {
+            if (self.entity_to_storage.fetchSwapRemove(entity)) |kv| {
                 const arch_id = kv.value;
                 inline for (std.meta.fields(archetypes_types)) |field, i| {
                     // TODO optimize using an array of functions ptr
@@ -78,18 +89,18 @@ pub fn Archetypes(comptime type_slice: []const []const type) type {
         /// Returns a slice over slices of the requested query type.
         /// A query of .{*const A, *B} over {A,B},{A} archetypes will return
         /// []{.{[]const A, []B}}
-        pub fn iter(self: *S, comptime types: anytype) comptime_utils.componentSlicesFromQueryTuple(type_slice, types) {
+        pub fn iter(self: *S, comptime types: anytype) comptime_utils.componentSlicesFromQueryTuple(archetypes_component_types, types) {
             // Find all archetypes containing all types pointed to by the pointers.
 
             const user_types = comptime_utils.innerTypesFromPointersTuple(types);
 
-            const converted_output_type = comptime_utils.componentSlicesFromQueryTuple(type_slice, types);
+            const converted_output_type = comptime_utils.componentSlicesFromQueryTuple(archetypes_component_types, types);
             var all: converted_output_type = undefined;
             const converted_user_tuple_type = @TypeOf(all[0]);
             comptime var insert_idx = 0;
 
             // for self.archetypes find matching
-            inline for (generated_tuples) |archetype_tuple, archetype_idx| {
+            inline for (archetypes_component_tuples) |archetype_tuple, archetype_idx| {
                 comptime var not_found = false;
 
                 // For all types requested by the user
@@ -163,3 +174,11 @@ test "archetypes" {
         }
     }
 }
+
+//test "archetype with duped type" {
+//    // should fail with compile error.. how to test that?
+//    var archetypes = try Archetypes(&[_][]const type{
+//        &[_]type{ u32, u32 },
+//    }).init(std.testing.allocator);
+//    defer archetypes.deinit();
+//}
